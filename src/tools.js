@@ -1,4 +1,5 @@
 import { searchKnowledgeBase } from "./rag.js";
+import { getCache, setCache, delCache } from "./redisService.js";
 
 // ─── Tool Definitions (OpenAI function calling schema) ─────────────────────
 
@@ -119,42 +120,43 @@ const mockOrders = {
 
 // ─── Tool Implementations ───────────────────────────────────────────────────
 
-function get_order_status({ order_id }) {
+async function get_order_status({ order_id }) {
+  const cacheKey = `order:${order_id}`;
+  const cached = await getCache(cacheKey);
+  if (cached) return cached;
+
   const order = mockOrders[order_id];
-  if (!order) {
-    return { error: `找不到訂單 ${order_id}` };
-  }
-  return {
-    order_id: order.id,
-    status: order.status,
-    item: order.item,
-    amount: order.amount,
-  };
+  if (!order) return { error: `找不到訂單 ${order_id}` };
+
+  const result = { order_id: order.id, status: order.status, item: order.item, amount: order.amount };
+  await setCache(cacheKey, result, 60);
+  return result;
 }
 
-function list_orders({ user_id, status_filter = "all" }) {
+async function list_orders({ user_id, status_filter = "all" }) {
+  const cacheKey = `orders:${user_id}:${status_filter}`;
+  const cached = await getCache(cacheKey);
+  if (cached) return cached;
+
   const orders = Object.values(mockOrders).filter((o) => {
     if (o.user_id !== user_id) return false;
     if (status_filter !== "all" && o.status !== status_filter) return false;
     return true;
   });
 
-  if (orders.length === 0) {
-    return { message: `用戶 ${user_id} 沒有符合條件的訂單` };
-  }
+  const result =
+    orders.length === 0
+      ? { message: `用戶 ${user_id} 沒有符合條件的訂單` }
+      : { user_id, count: orders.length, orders: orders.map(({ id, status, item, amount }) => ({ id, status, item, amount })) };
 
-  return {
-    user_id,
-    count: orders.length,
-    orders: orders.map(({ id, status, item, amount }) => ({ id, status, item, amount })),
-  };
+  await setCache(cacheKey, result, 30);
+  return result;
 }
 
-function cancel_order({ order_id, reason }) {
+async function cancel_order({ order_id, reason }) {
   const order = mockOrders[order_id];
-  if (!order) {
-    return { error: `找不到訂單 ${order_id}` };
-  }
+  if (!order) return { error: `找不到訂單 ${order_id}` };
+
   if (order.status === "shipped" || order.status === "delivered") {
     return { error: `訂單 ${order_id} 已${order.status === "shipped" ? "出貨" : "送達"}，無法取消` };
   }
@@ -162,8 +164,10 @@ function cancel_order({ order_id, reason }) {
     return { error: `訂單 ${order_id} 已經是取消狀態` };
   }
 
-  // 模擬更新
   mockOrders[order_id] = { ...order, status: "cancelled" };
+
+  await delCache(`order:${order_id}`, `orders:${order.user_id}:all`, `orders:${order.user_id}:pending`);
+
   return {
     success: true,
     order_id,
@@ -191,9 +195,13 @@ function calculate_total({ order_ids }) {
 
 // ─── Dispatcher ─────────────────────────────────────────────────────────────
 
-// 同步工具直接 map，非同步工具單獨處理
-const syncToolMap = { get_order_status, list_orders, cancel_order, calculate_total };
-const asyncToolMap = { search_knowledge_base: searchKnowledgeBase };
+const asyncToolMap = {
+  search_knowledge_base: searchKnowledgeBase,
+  get_order_status,
+  list_orders,
+  cancel_order,
+  calculate_total,
+};
 
 /**
  * 執行工具呼叫，回傳 JSON 字串（OpenAI 要求 tool result 為字串）
@@ -208,13 +216,7 @@ export async function executeTool(name, argsJson) {
 
     if (asyncToolMap[name]) {
       const result = await asyncToolMap[name](args);
-      // asyncToolMap 的工具自行回傳 JSON 字串
       return typeof result === "string" ? result : JSON.stringify(result);
-    }
-
-    if (syncToolMap[name]) {
-      const result = syncToolMap[name](args);
-      return JSON.stringify(result);
     }
 
     return JSON.stringify({ error: `未知工具: ${name}` });

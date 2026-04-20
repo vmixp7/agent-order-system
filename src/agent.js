@@ -1,9 +1,9 @@
 import OpenAI from "openai";
 import { toolDefinitions, executeTool } from "./tools.js";
 import { MemoryManager } from "./memory.js";
+import { withRetry } from "./retry.js";
 
-const MAX_ITERATIONS = 10; // 防止無限迴圈
-const RETRY_LIMIT = 3;     // API 錯誤重試上限
+const MAX_ITERATIONS = 10;
 
 // ─── Agent ──────────────────────────────────────────────────────────────────
 
@@ -80,33 +80,16 @@ export class Agent {
   }
 
   /** 帶重試機制的 API 呼叫 */
-  async _callWithRetry() {
-    let lastError;
-
-    for (let attempt = 1; attempt <= RETRY_LIMIT; attempt++) {
-      try {
-        return await this.client.chat.completions.create({
-          model: this.model,
-          messages: this.memory.getHistory(),
-          tools: toolDefinitions,
-          tool_choice: "auto", // 讓模型自行決定要不要用工具
-        });
-      } catch (err) {
-        lastError = err;
-        const isRetryable =
-          err.status === 429 ||  // rate limit
-          err.status === 500 ||  // server error
-          err.status === 503;    // service unavailable
-
-        if (!isRetryable || attempt === RETRY_LIMIT) break;
-
-        const delay = attempt * 2000; // 指數退避（簡化版）
-        console.warn(`[Agent] API 錯誤 (${err.status})，${delay / 1000}s 後重試... (${attempt}/${RETRY_LIMIT})`);
-        await sleep(delay);
-      }
-    }
-
-    throw new Error(`API 呼叫失敗: ${lastError?.message ?? "未知錯誤"}`);
+  _callWithRetry() {
+    return withRetry(
+      () => this.client.chat.completions.create({
+        model: this.model,
+        messages: this.memory.getHistory(),
+        tools: toolDefinitions,
+        tool_choice: "auto",
+      }),
+      { label: "OpenAI" }
+    );
   }
 
   /** 重置對話記憶，開始新任務 */
@@ -114,8 +97,4 @@ export class Agent {
     this.memory.reset();
     console.log("[Agent] 記憶已重置");
   }
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

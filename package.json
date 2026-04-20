@@ -23,6 +23,7 @@
   "dependencies": {
     "chromadb": "^3.4.3",
     "dotenv": "^17.4.2",
+    "ioredis": "^5.6.1",
     "openai": "^6.34.0"
   },
   "devDependencies": {

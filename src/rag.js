@@ -1,4 +1,5 @@
 import { ChromaClient, OpenAIEmbeddingFunction } from "chromadb";
+import { withRetry } from "./retry.js";
 
 const COLLECTION_NAME = "order_knowledge_base";
 const CHROMA_URL = process.env.CHROMA_URL ?? "http://localhost:8000";
@@ -22,11 +23,14 @@ export async function getCollection() {
   if (_collection) return _collection;
 
   const client = new ChromaClient({ path: CHROMA_URL });
-  _collection = await client.getOrCreateCollection({
-    name: COLLECTION_NAME,
-    embeddingFunction: getEmbedder(),
-    metadata: { description: "訂單系統知識庫" },
-  });
+  _collection = await withRetry(
+    () => client.getOrCreateCollection({
+      name: COLLECTION_NAME,
+      embeddingFunction: getEmbedder(),
+      metadata: { description: "訂單系統知識庫" },
+    }),
+    { label: "RAG/connect" }
+  );
 
   console.log(`[RAG] 已連線 ChromaDB collection: ${COLLECTION_NAME}`);
   return _collection;
@@ -41,11 +45,14 @@ export async function getCollection() {
 export async function addDocuments(docs) {
   const collection = await getCollection();
 
-  await collection.add({
-    ids: docs.map((d) => d.id),
-    documents: docs.map((d) => d.text),
-    metadatas: docs.map((d) => d.metadata ?? {}),
-  });
+  await withRetry(
+    () => collection.add({
+      ids: docs.map((d) => d.id),
+      documents: docs.map((d) => d.text),
+      metadatas: docs.map((d) => d.metadata ?? {}),
+    }),
+    { label: "RAG/add" }
+  );
 
   console.log(`[RAG] 已寫入 ${docs.length} 筆文件`);
 }
@@ -61,10 +68,10 @@ export async function addDocuments(docs) {
 export async function queryKnowledgeBase(query, nResults = 3) {
   const collection = await getCollection();
 
-  const result = await collection.query({
-    queryTexts: [query],
-    nResults,
-  });
+  const result = await withRetry(
+    () => collection.query({ queryTexts: [query], nResults }),
+    { label: "RAG/query" }
+  );
 
   // ChromaDB 回傳結構：每個陣列的第 0 個元素對應第一個 queryText
   const ids = result.ids[0] ?? [];
