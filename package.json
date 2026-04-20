@@ -1,0 +1,31 @@
+{
+  "name": "agent-order-system",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "seed": "node src/seed.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vmixp7/agent-order-system.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/vmixp7/agent-order-system/issues"
+  },
+  "homepage": "https://github.com/vmixp7/agent-order-system#readme",
+  "description": "",
+  "dependencies": {
+    "chromadb": "^3.4.3",
+    "dotenv": "^17.4.2",
+    "openai": "^6.34.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
