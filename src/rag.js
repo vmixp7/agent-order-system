@@ -1,4 +1,5 @@
-import { ChromaClient, OpenAIEmbeddingFunction } from "chromadb";
+import { ChromaClient } from "chromadb";
+import { OpenAIEmbeddingFunction } from "@chroma-core/openai";
 import { withRetry } from "./retry.js";
 
 const COLLECTION_NAME = "order_knowledge_base";
@@ -10,8 +11,8 @@ let _collection = null;
 
 function getEmbedder() {
   return new OpenAIEmbeddingFunction({
-    openai_api_key: process.env.OPENAI_API_KEY,
-    openai_model: "text-embedding-3-small",
+    apiKey: process.env.OPENAI_API_KEY,
+    modelName: "text-embedding-3-small",
   });
 }
 
